@@ -1,0 +1,22 @@
+name: playerRiskLevelManager
+main: com.tenth.riskManager.(main here)
+version: 1.0
+api-version: 1.21
+commands:
+  help:
+    description: Set and view players' risk level and notify staff of high risk players joining.
+    usage: /riskManager help
+    permission: riskManager.view
+  get:
+    description: Get a player's risk level.
+    usage: /riskManager get <player>
+    permission: riskManager.view
+  set:
+    description: Set a player's risk level (integer 1-7).
+    usage: /riskManager set <player> <risk>
+    permission: riskManager.set
+permissions:
+  riskManager.view:
+    default: op
+  riskManager.set:
+    default: op
