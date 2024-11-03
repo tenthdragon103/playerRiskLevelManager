@@ -26,12 +26,12 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
     public void onEnable() {
         this.riskLevels = new HashMap<>();
 
-        setupRiskFile();
-        loadRisks();
+        setupRiskFile(); //ensure file exists, create if it doesnt
+        loadRisks(); //bring file data into cache
 
-        this.getCommand("riskManager").setExecutor(this);
+        this.getCommand("riskManager").setExecutor(this); //register commands
 
-        getServer().getPluginManager().registerEvents(new RiskManagerListener(this), this);
+        getServer().getPluginManager().registerEvents(new RiskManagerListener(this), this); //register listener
 
         getLogger().info(ChatColor.GREEN + "Risk Manager Enabled.");
     }
@@ -42,12 +42,12 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
     }
 
     public void setupRiskFile() {
-        riskFile = new File(getDataFolder(), "riskData.yml");
+        riskFile = new File(getDataFolder(), "riskData.yml"); //riskData must be in same directory as the plugin jar
         if (!riskFile.exists()) {
             riskFile.getParentFile().mkdirs();
             saveResource("riskData.yml", false);
         }
-        riskConfig = YamlConfiguration.loadConfiguration(riskFile);
+        riskConfig = YamlConfiguration.loadConfiguration(riskFile); //idk im ngl chat gpt wrote this idk why its like this
     }
 
     public void loadRisks() {
