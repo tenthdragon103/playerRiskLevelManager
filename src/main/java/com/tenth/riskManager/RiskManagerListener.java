@@ -21,12 +21,26 @@ public class RiskManagerListener implements Listener {
         Player player = e.getPlayer();
         UUID uuid = player.getUniqueId();
         //notify staff if high risk
+        if (!plugin.getRiskLevels().containsKey(uuid)) {
+            plugin.getRiskLevels().put(uuid, 4);
+            plugin.getRiskConfig().set(uuid.toString(), 4); // Save to config
+            plugin.saveRiskData(); // Save risk data to file
+        }
+
+        // Notify staff if player has a high-risk level
+        int riskLevel = plugin.getRiskLevels().get(uuid);
+        if (riskLevel > 4) { //notify staff in staffchat
+            plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), "staffchat A high risk player, " + player.getName() + ", has joined! Keep an eye out on them.");
+        }
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent e){
         Player player = e.getPlayer();
         UUID uuid = player.getUniqueId();
-        //player go bye idk
+        int riskLevel = plugin.getRiskLevels().get(uuid);
+        if (riskLevel > 4) { //notify staff in staffchat
+            plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), "staffchat A high risk player, " + player.getName() + ", has left!");
+        }
     }
 }
