@@ -17,14 +17,14 @@ import java.util.UUID;
 
 public class RiskManager extends JavaPlugin implements CommandExecutor {
 
-    private Map<UUID, Integer> riskLevels;
+    private static Map<UUID, RiskData> riskLevels;
     private File riskFile;
 
     FileConfiguration riskConfig;
 
     @Override
     public void onEnable() {
-        this.riskLevels = new HashMap<>();
+        riskLevels = new HashMap<>();
 
         setupRiskFile(); //ensure file exists, create if it doesnt
         loadRisks(); //bring file data into cache
@@ -42,26 +42,28 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
     }
 
     public void setupRiskFile() {
-        riskFile = new File(getDataFolder(), "riskData.yml"); //riskData must be in same directory as the plugin jar
+        riskFile = new File(getDataFolder(), "riskData.yml");
         if (!riskFile.exists()) {
             riskFile.getParentFile().mkdirs();
             saveResource("riskData.yml", false);
         }
-        riskConfig = YamlConfiguration.loadConfiguration(riskFile); //idk im ngl chat gpt wrote this idk why its like this
+        riskConfig = YamlConfiguration.loadConfiguration(riskFile);
     }
 
     public void loadRisks() {
         for (String key : riskConfig.getKeys(false)) {
             try {
                 UUID uuid = UUID.fromString(key);
-                int riskLevel = riskConfig.getInt(key);
-                riskLevels.put(uuid, riskLevel);
+                int riskLevel = riskConfig.getInt(key + ".riskLevel");
+                boolean isFlagged = riskConfig.getBoolean(key + ".isFlagged", false); // Default to false if not set
+                riskLevels.put(uuid, new RiskData(riskLevel, isFlagged));
             } catch (IllegalArgumentException e) {
                 getLogger().warning("Invalid UUID in riskData.yml: " + key);
             }
         }
-        getLogger().info("Loaded risk levels for " + riskLevels.size() + " players.");
+        getLogger().info("Loaded risk data for " + riskLevels.size() + " players.");
     }
+
 
     public void saveRiskData() {
         if (riskLevels == null) {
@@ -69,9 +71,13 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
             return;
         }
 
-        for (Map.Entry<UUID, Integer> entry : riskLevels.entrySet()) {
-            riskConfig.set(entry.getKey().toString(), entry.getValue());
+        for (Map.Entry<UUID, RiskData> entry : riskLevels.entrySet()) {
+            String key = entry.getKey().toString();
+            RiskData data = entry.getValue();
+            riskConfig.set(key + ".riskLevel", data.getRiskLevel());
+            riskConfig.set(key + ".isFlagged", data.isFlagged());
         }
+
         try {
             riskConfig.save(riskFile);
         } catch (IOException e) {
@@ -80,13 +86,18 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
         }
     }
 
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage(ChatColor.RED + "This command can only be used by players.");
+            return true;
+        }
 
         Player player = (Player) sender;
 
         if (!player.hasPermission("riskManager.view")) {
-            player.sendMessage(ChatColor.RED + "You dont have permission to use this command.");
+            player.sendMessage(ChatColor.RED + "You don't have permission to use this command.");
             return true;
         }
 
@@ -97,24 +108,25 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
             player.sendMessage(ChatColor.GREEN + "Commands:");
             player.sendMessage(ChatColor.YELLOW + "/riskManager get <playerName>");
             player.sendMessage(ChatColor.YELLOW + "/riskManager set <playerName> <riskLevel: 1-7>");
-        } else if (args.length > 3) {
-            player.sendMessage(ChatColor.RED + "Too many arguments.");
+            player.sendMessage(ChatColor.YELLOW + "/riskManager toggleFlag <playerName>");
         } else if (args.length == 2 && args[0].equalsIgnoreCase("get")) {
-            //get risk from riskData.yml for player with the name in args[1]. Autofill/suggest any currently online
-            // players' names into the commandline if possible (when the user presses tab to go through options).
             String targetName = args[1];
             Player targetPlayer = getServer().getPlayer(targetName);
 
             if (targetPlayer != null) {
                 UUID targetUUID = targetPlayer.getUniqueId();
-                Integer riskLevel = getRiskLevels().get(targetUUID);
-                player.sendMessage(ChatColor.GREEN + targetName + " has a risk level of " + riskLevel);
+                RiskData data = riskLevels.get(targetUUID);
+
+                if (data != null) {
+                    player.sendMessage(ChatColor.GREEN + targetName + " has a risk level of " + data.getRiskLevel() +
+                            " and is " + (data.isFlagged() ? "flagged" : "not flagged") + ".");
+                } else {
+                    player.sendMessage(ChatColor.RED + targetName + " does not have risk data.");
+                }
             } else {
                 player.sendMessage(ChatColor.RED + "Player " + targetName + " not found.");
             }
         } else if (args.length == 3 && args[0].equalsIgnoreCase("set")) {
-            //get the player uuid like the "get" command and store the previous risk level, then set the player's (args[1]) risk to the integer risk given (args[2]).
-            // Set risk level for the player in args[1] to the risk level in args[2]
             String targetName = args[1];
             Player targetPlayer = getServer().getPlayer(targetName);
 
@@ -123,20 +135,46 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
                 try {
                     int newRiskLevel = Integer.parseInt(args[2]);
 
-                    Integer previousRiskLevel = getRiskLevels().put(targetUUID, newRiskLevel);
-                    player.sendMessage(ChatColor.GREEN + "Set " + targetName + "'s Risk Level to " + newRiskLevel +
-                            " (previously: " + previousRiskLevel + ")");
+                    if (newRiskLevel < 1 || newRiskLevel > 7) {
+                        player.sendMessage(ChatColor.RED + "Risk level must be between 1 and 7.");
+                        return true;
+                    }
+
+                    RiskData data = riskLevels.getOrDefault(targetUUID, new RiskData(0, false));
+                    int previousRiskLevel = data.getRiskLevel();
+                    data.setRiskLevel(newRiskLevel);
+                    riskLevels.put(targetUUID, data);
+
+                    player.sendMessage(ChatColor.GREEN + "Set " + targetName + "'s risk level to " + newRiskLevel +
+                            " (previously: " + previousRiskLevel + ").");
 
                     saveRiskData(); // Persist the change to file
-
                 } catch (NumberFormatException e) {
                     player.sendMessage(ChatColor.RED + "Invalid risk level. Please enter a number.");
                 }
             } else {
                 player.sendMessage(ChatColor.RED + "Player " + targetName + " not found.");
             }
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("toggleFlag")) {
+            String targetName = args[1];
+            Player targetPlayer = getServer().getPlayer(targetName);
+
+            if (targetPlayer != null) {
+                UUID targetUUID = targetPlayer.getUniqueId();
+                RiskData data = riskLevels.getOrDefault(targetUUID, new RiskData(0, false));
+                boolean currentFlag = data.isFlagged();
+                data.setFlagged(!currentFlag);
+                riskLevels.put(targetUUID, data);
+
+                player.sendMessage(ChatColor.GREEN + "Player " + targetName +
+                        " is now " + (data.isFlagged() ? "flagged" : "no longer flagged") + ".");
+
+                saveRiskData(); // Persist the change to file
+            } else {
+                player.sendMessage(ChatColor.RED + "Player " + targetName + " not found.");
+            }
         } else {
-            player.sendMessage(ChatColor.YELLOW + "Usage: /riskManager <get|set> <playerName> (riskLevel: 1-7)");
+            player.sendMessage(ChatColor.YELLOW + "Usage: /riskManager <get|set|toggleFlag> <playerName> (riskLevel: 1-7)");
         }
 
         return true;
@@ -146,7 +184,7 @@ public class RiskManager extends JavaPlugin implements CommandExecutor {
         return riskConfig;
     }
 
-    public Map<UUID, Integer> getRiskLevels() {
+    public Map<UUID, RiskData> getRiskLevels() {
         return riskLevels;
     }
 
